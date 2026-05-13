@@ -154,15 +154,18 @@ async function initCheckout(amount, source) {
   const result = await apiCall('create_checkout', {
     amount: parseFloat(amount),
     source: source,
-    success_url: window.location.origin,
+    success_url: window.location.href, // Use full current page URL
     cancel_url: window.location.href
   });
   
-  if (result.data?.attributes?.checkout_url) {
-    showToast('✅ Redirecting to payment...');
+  if (result.error) {
+    showToast('❌ ' + result.error);
+    console.error('Checkout debug:', result); // Check browser console
+  } else if (result.data?.attributes?.checkout_url) {
+    showToast('✅ Redirecting...');
     window.location.href = result.data.attributes.checkout_url;
   } else {
-    showToast('❌ ' + (result.error?.message || result.error || 'Checkout failed'));
+    showToast('❌ Unexpected response format');
   }
 }
 
