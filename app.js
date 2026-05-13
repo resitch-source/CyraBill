@@ -3,32 +3,56 @@ const API_URL = 'https://script.google.com/macros/s/AKfycbxUJ2QP_0VbmbRMWDlD77bV
 let TOKEN = localStorage.getItem('cyra_token') || '';
 let ROLE = localStorage.getItem('cyra_role') || '';
 
-// ✅ CORS-SAFE API CALLER (Uses GET with query params to avoid preflight)
+// ✅ CORS-SAFE API CALLER - Handles empty tokens & Apps Script quirks
 async function apiCall(action, params = {}) {
-  const urlParams = new URLSearchParams({ action, token: TOKEN });
+  // Build URL with query parameters (GET requests avoid preflight)
+  const urlParams = new URLSearchParams({ action });
   
-  // Add params as query strings (Apps Script handles both GET/POST)
+  // Only add token if it exists (empty token causes auth issues)
+  if (TOKEN && TOKEN.trim()) {
+    urlParams.append('token', TOKEN);
+  }
+  
+  // Add other params
   Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null) {
-      urlParams.append(k, typeof v === 'object' ? JSON.stringify(v) : v);
+    if (v !== undefined && v !== null && v !== '') {
+      urlParams.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
     }
   });
   
   const url = `${API_URL}?${urlParams.toString()}`;
   
   try {
-    // Simple GET request = no CORS preflight
-    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
-    const text = await res.text();
+    // Simple GET = no CORS preflight
+    const response = await fetch(url, { 
+      method: 'GET',
+      cache: 'no-store',  // Prevent cached error responses
+      mode: 'cors'        // Explicitly request CORS
+    });
     
-    // Parse JSON response from Apps Script
+    // Apps Script returns text; parse as JSON
+    const text = await response.text();
+    
+    // Handle empty responses
+    if (!text.trim()) {
+      return { error: 'Empty response from server' };
+    }
+    
     try {
       return JSON.parse(text);
-    } catch {
-      return { error: 'Invalid server response', raw: text.slice(0, 200) };
+    } catch (parseErr) {
+      console.error('JSON parse error:', parseErr, 'Raw response:', text);
+      return { error: 'Server returned invalid JSON', raw: text.slice(0, 200) };
     }
   } catch (err) {
     console.error('Fetch error:', err);
+    // Provide helpful error for CORS issues
+    if (err.message.includes('Failed to fetch') || err.message.includes('CORS')) {
+      return { 
+        error: 'CORS error: Check Apps Script deployment settings. Must be "Execute as: Me" + "Who has access: Anyone"',
+        hint: 'Redeploy as New version after changing settings'
+      };
+    }
     return { error: 'Network error: ' + err.message };
   }
 }
