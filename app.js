@@ -8,27 +8,32 @@ fetch(url, {
   body: JSON.stringify(data)
 })
 
-// ✅ USE: Simple fetch that Apps Script handles reliably
-async function apiCall(action, payload = {}) {
-  const url = `${API_URL}?action=${action}&token=${TOKEN}`;
+// ✅ CORS-SAFE API CALLER FOR APPS SCRIPT
+async function apiCall(action, params = {}) {
+  // Build URL with query parameters (avoids POST preflight)
+  const urlParams = new URLSearchParams({
+    action: action,
+    token: TOKEN,
+    ...Object.fromEntries(
+      Object.entries(params).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v])
+    )
+  });
+  
+  const url = `${API_URL}?${urlParams.toString()}`;
   
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      // ⚠️ Do NOT set 'Content-Type' header - let browser use default for form-encoded
-      body: JSON.stringify(payload)
-      // Apps Script accepts JSON even without explicit header
-    });
-    
-    // Handle Apps Script's text output
+    // Use GET for simple requests (no preflight)
+    const res = await fetch(url, { method: 'GET' });
     const text = await res.text();
+    
+    // Apps Script returns text; parse as JSON
     try {
       return JSON.parse(text);
     } catch {
-      return { error: 'Invalid response from server', raw: text };
+      return { error: 'Server returned invalid JSON', raw: text.slice(0, 200) };
     }
   } catch (err) {
-    console.error('Fetch error:', err);
+    console.error('Fetch failed:', err);
     return { error: 'Network error: ' + err.message };
   }
 }
@@ -38,6 +43,7 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
   const btn = e.target.querySelector('button');
   btn.classList.add('loading'); btn.textContent = 'Signing in...';
   
+  // Use GET with params instead of POST with JSON body
   const result = await apiCall('login', {
     username: document.getElementById('username').value,
     pin: document.getElementById('pin').value
@@ -46,9 +52,14 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
   btn.classList.remove('loading'); btn.textContent = 'Sign In';
   
   if (result.token) {
-    // Success flow...
+    TOKEN = result.token; ROLE = result.role;
+    localStorage.setItem('cyra_token', TOKEN);
+    localStorage.setItem('cyra_role', ROLE);
+    document.getElementById('loginModal').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    loadTransactions(); loadAI();
   } else {
-    showToast('❌ ' + (result.error || 'Failed'));
+    showToast('❌ ' + (result.error || 'Login failed'));
   }
 });
 
