@@ -250,3 +250,58 @@ if (TOKEN && ROLE) {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+let cicoMode = 'IN';
+
+function setCICOMode(mode) {
+  cicoMode = mode;
+  document.getElementById('btnCICOIn').classList.toggle('active', mode==='IN');
+  document.getElementById('btnCICOOut').classList.toggle('active', mode==='OUT');
+  document.getElementById('btnProcessCICO').textContent = mode==='IN' ? '📥 Process Cash In' : '📤 Process Cash Out';
+  loadCICOStatus();
+}
+
+async function loadCICOStatus() {
+  const res = await apiCall('cico_status');
+  if (res.error) return console.warn('CICO status error:', res.error);
+  document.getElementById('cicoIn').textContent = res.today_in.toLocaleString();
+  document.getElementById('cicoOut').textContent = res.today_out.toLocaleString();
+  document.getElementById('cicoFloat').textContent = res.net_float.toLocaleString();
+}
+
+async function processCICO() {
+  const btn = document.getElementById('btnProcessCICO');
+  const statusEl = document.getElementById('cicoStatus');
+  
+  const amount = parseFloat(document.getElementById('cicoAmount').value);
+  const account = document.getElementById('cicoAccount').value.trim();
+  const network = document.getElementById('cicoNetwork').value;
+  const notes = document.getElementById('cicoNotes').value.trim();
+  
+  if (!amount || amount < 50) return showToast('❌ Amount must be ≥ ₱50');
+  if (!account || account.length < 10) return showToast('❌ Valid 10-digit number required');
+  
+  btn.classList.add('loading'); btn.textContent = '⏳ Processing...';
+  
+  const res = await apiCall(cicoMode === 'IN' ? 'cico_in' : 'cico_out', {
+    amount, account, network, notes
+  });
+  
+  btn.classList.remove('loading');
+  btn.textContent = cicoMode === 'IN' ? '📥 Process Cash In' : '📤 Process Cash Out';
+  
+  if (res.success) {
+    showToast(`✅ ${cicoMode} ₱${amount} → Ref: ${res.ref}`);
+    document.getElementById('cicoAmount').value = '';
+    document.getElementById('cicoAccount').value = '';
+    document.getElementById('cicoNotes').value = '';
+    statusEl.innerHTML += `<br>📌 ${res.status.toUpperCase()}: ${res.notes}`;
+    loadCICOStatus();
+    loadTransactions(); // Refresh table
+  } else {
+    showToast('❌ ' + (res.error || 'Failed'));
+  }
+}
+
+// Load status on init
+if (document.getElementById('cicoPanel')) loadCICOStatus();
