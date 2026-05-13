@@ -92,6 +92,36 @@
       <div id="simOutput" style="margin-top:12px"></div>
     </div>
 
+    <div class="card" id="cicoPanel" style="border: 1px solid #10b98144;">
+      <h3>💱 CICO Operations</h3>
+      <div style="display:flex; gap:8px; margin:12px 0;">
+        <button onclick="setCICOMode('IN')" id="btnCICOIn" class="btnCICO active" style="flex:1;">📥 Cash In</button>
+        <button onclick="setCICOMode('OUT')" id="btnCICOOut" class="btnCICO" style="flex:1;">📤 Cash Out</button>
+      </div>
+  
+      <div id="cicoForm" style="display:flex; flex-direction:column; gap:8px;">
+        <input type="number" id="cicoAmount" placeholder="Amount (₱)" step="0.01" min="50">
+        <input type="text" id="cicoAccount" placeholder="GCash/Maya Number (10 digits)">
+        <select id="cicoNetwork">
+          <option value="GCASH">GCash</option>
+          <option value="MAYA">Maya</option>
+        </select>
+        <input type="text" id="cicoNotes" placeholder="Reference/Notes (optional)">
+        <button onclick="processCICO()" id="btnProcessCICO">Process Cash In</button>
+      </div>
+  
+      <div id="cicoStatus" style="margin-top:12px; font-size:0.9rem; color:#94a3b8;">
+        <strong>Today:</strong> IN ₱<span id="cicoIn">0</span> | OUT ₱<span id="cicoOut">0</span> | Float ₱<span id="cicoFloat">0</span>
+      </div>
+  </div>
+
+<style>
+  .btnCICO { background:#334155; color:#94a3b8; border:1px solid #475569; }
+  .btnCICO.active { background:#10b981; color:white; border-color:#059669; }
+  #cicoPanel button:hover { opacity:0.9; }
+</style>
+
+    
     <!-- Transactions Table -->
     <div class="card">
       <h3>Recent Transactions</h3>
