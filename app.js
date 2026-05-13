@@ -1,14 +1,55 @@
 const API_URL = 'https://script.google.com/macros/s/AKfycbxUJ2QP_0VbmbRMWDlD77bVzF5gHgv489oJsS3_b6D9OConuUpZMDi-9Fifn8DpLjeh/exec'; // ⬅️ REPLACE
 let TOKEN = localStorage.getItem('cyra_token') || ''; let ROLE = localStorage.getItem('cyra_role') || '';
 
+// ❌ AVOID: Custom headers that trigger preflight
+fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'X-Custom': 'value' }, // ← Custom header = preflight
+  body: JSON.stringify(data)
+})
+
+// ✅ USE: Simple fetch that Apps Script handles reliably
+async function apiCall(action, payload = {}) {
+  const url = `${API_URL}?action=${action}&token=${TOKEN}`;
+  
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      // ⚠️ Do NOT set 'Content-Type' header - let browser use default for form-encoded
+      body: JSON.stringify(payload)
+      // Apps Script accepts JSON even without explicit header
+    });
+    
+    // Handle Apps Script's text output
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { error: 'Invalid response from server', raw: text };
+    }
+  } catch (err) {
+    console.error('Fetch error:', err);
+    return { error: 'Network error: ' + err.message };
+  }
+}
+
 document.getElementById('loginForm').addEventListener('submit', async e => {
-  e.preventDefault(); const btn = e.target.querySelector('button'); btn.classList.add('loading'); btn.textContent = 'Signing in...';
-  const res = await fetch(`${API_URL}?action=login`, { method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ username: document.getElementById('username').value, pin: document.getElementById('pin').value })});
-  const data = await res.json(); btn.classList.remove('loading'); btn.textContent = 'Sign In';
-  if(data.token){ TOKEN=data.token; ROLE=data.role; localStorage.setItem('cyra_token',TOKEN); localStorage.setItem('cyra_role',ROLE);
-    document.getElementById('loginModal').classList.add('hidden'); document.getElementById('mainApp').classList.remove('hidden'); loadTransactions(); loadAI();
-  } else showToast('❌ '+ (data.error||'Failed'));
+  e.preventDefault();
+  const btn = e.target.querySelector('button');
+  btn.classList.add('loading'); btn.textContent = 'Signing in...';
+  
+  const result = await apiCall('login', {
+    username: document.getElementById('username').value,
+    pin: document.getElementById('pin').value
+  });
+  
+  btn.classList.remove('loading'); btn.textContent = 'Sign In';
+  
+  if (result.token) {
+    // Success flow...
+  } else {
+    showToast('❌ ' + (result.error || 'Failed'));
+  }
 });
 
 document.getElementById('addForm').addEventListener('submit', async e => {
