@@ -1,5 +1,5 @@
 // CyraBill Frontend - CORS-Safe API Caller
-const API_URL = 'YOUR_APPS_SCRIPT_WEB_APP_URL'; // ⬅️ REPLACE WITH YOUR DEPLOYED URL
+const API_URL = 'https://script.google.com/macros/s/AKfycbxUJ2QP_0VbmbRMWDlD77bVzF5gHgv489oJsS3_b6D9OConuUpZMDi-9Fifn8DpLjeh/exec'; // ⬅️ REPLACE WITH YOUR DEPLOYED URL
 let TOKEN = localStorage.getItem('cyra_token') || '';
 let ROLE = localStorage.getItem('cyra_role') || '';
 
