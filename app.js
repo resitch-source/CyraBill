@@ -1,49 +1,44 @@
-const API_URL = 'https://script.google.com/macros/s/AKfycbxUJ2QP_0VbmbRMWDlD77bVzF5gHgv489oJsS3_b6D9OConuUpZMDi-9Fifn8DpLjeh/exec'; // ⬅️ REPLACE
-let TOKEN = localStorage.getItem('cyra_token') || ''; let ROLE = localStorage.getItem('cyra_role') || '';
+// CyraBill Frontend - CORS-Safe API Caller
+const API_URL = 'YOUR_APPS_SCRIPT_WEB_APP_URL'; // ⬅️ REPLACE WITH YOUR DEPLOYED URL
+let TOKEN = localStorage.getItem('cyra_token') || '';
+let ROLE = localStorage.getItem('cyra_role') || '';
 
-// ❌ AVOID: Custom headers that trigger preflight
-fetch(url, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'X-Custom': 'value' }, // ← Custom header = preflight
-  body: JSON.stringify(data)
-})
-
-// ✅ CORS-SAFE API CALLER FOR APPS SCRIPT
+// ✅ CORS-SAFE API CALLER (Uses GET with query params to avoid preflight)
 async function apiCall(action, params = {}) {
-  // Build URL with query parameters (avoids POST preflight)
-  const urlParams = new URLSearchParams({
-    action: action,
-    token: TOKEN,
-    ...Object.fromEntries(
-      Object.entries(params).map(([k, v]) => [k, typeof v === 'object' ? JSON.stringify(v) : v])
-    )
+  const urlParams = new URLSearchParams({ action, token: TOKEN });
+  
+  // Add params as query strings (Apps Script handles both GET/POST)
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null) {
+      urlParams.append(k, typeof v === 'object' ? JSON.stringify(v) : v);
+    }
   });
   
   const url = `${API_URL}?${urlParams.toString()}`;
   
   try {
-    // Use GET for simple requests (no preflight)
-    const res = await fetch(url, { method: 'GET' });
+    // Simple GET request = no CORS preflight
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
     const text = await res.text();
     
-    // Apps Script returns text; parse as JSON
+    // Parse JSON response from Apps Script
     try {
       return JSON.parse(text);
     } catch {
-      return { error: 'Server returned invalid JSON', raw: text.slice(0, 200) };
+      return { error: 'Invalid server response', raw: text.slice(0, 200) };
     }
   } catch (err) {
-    console.error('Fetch failed:', err);
+    console.error('Fetch error:', err);
     return { error: 'Network error: ' + err.message };
   }
 }
 
-document.getElementById('loginForm').addEventListener('submit', async e => {
+// 🔐 Login Handler
+document.getElementById('loginForm')?.addEventListener('submit', async e => {
   e.preventDefault();
   const btn = e.target.querySelector('button');
   btn.classList.add('loading'); btn.textContent = 'Signing in...';
   
-  // Use GET with params instead of POST with JSON body
   const result = await apiCall('login', {
     username: document.getElementById('username').value,
     pin: document.getElementById('pin').value
@@ -58,45 +53,176 @@ document.getElementById('loginForm').addEventListener('submit', async e => {
     document.getElementById('loginModal').classList.add('hidden');
     document.getElementById('mainApp').classList.remove('hidden');
     loadTransactions(); loadAI();
+    showToast('✅ Welcome to CyraBill');
   } else {
     showToast('❌ ' + (result.error || 'Login failed'));
   }
 });
 
-document.getElementById('addForm').addEventListener('submit', async e => {
-  e.preventDefault(); const btn = e.target.querySelector('button'); btn.classList.add('loading'); btn.textContent='Adding...';
-  const res = await fetch(`${API_URL}?action=add&token=${TOKEN}`, { method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ type: document.getElementById('type').value, amount: parseFloat(document.getElementById('amount').value), description: document.getElementById('desc').value })});
-  const data = await res.json(); btn.classList.remove('loading'); btn.textContent='Add';
-  if(data.success){ showToast('✅ Added'); e.target.reset(); loadTransactions(); } else showToast('❌ '+ (data.error||'Failed'));
+// 📥 Add Transaction
+document.getElementById('addForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = e.target.querySelector('button');
+  btn.classList.add('loading'); btn.textContent = 'Adding...';
+  
+  const result = await apiCall('add', {
+    type: document.getElementById('type').value,
+    amount: parseFloat(document.getElementById('amount').value),
+    description: document.getElementById('desc').value,
+    category: document.getElementById('category').value || ''
+  });
+  
+  btn.classList.remove('loading'); btn.textContent = 'Add Transaction';
+  
+  if (result.success) {
+    showToast('✅ Added successfully');
+    e.target.reset();
+    if (result.category) document.getElementById('category').value = result.category;
+    loadTransactions();
+  } else {
+    showToast('❌ ' + (result.error || 'Failed'));
+  }
 });
 
-async function loadTransactions(){ const res = await fetch(`${API_URL}?action=list&limit=50&token=${TOKEN}`); const { rows } = await res.json();
-  document.querySelector('#txTable tbody').innerHTML = rows.map(r=>`<tr><td>${r.date}</td><td><span class="badge ${r.type==='IN'?'in':'out'}">${r.type}</span></td><td>₱${r.amount}</td><td>${r.category}</td><td>${r.status}</td></tr>`).join(''); }
-
-async function loadAI(){ const res = await fetch(`${API_URL}?action=list&limit=10&token=${TOKEN}`); const { rows } = await res.json();
-  let inSum=0, outSum=0; rows.forEach(r=>r.type==='IN'?inSum+=r.amount:outSum+=r.amount);
-  document.getElementById('aiStats').innerHTML=`<p><strong>Balance:</strong> ₱${(inSum-outSum).toFixed(2)}</p><p><small>Last 10: IN ₱${inSum} | OUT ₱${outSum}</small></p>`; }
-
-async function initCheckout(amt, src){ showToast('⏳ Redirecting to secure checkout...');
-  const res = await fetch(`${API_URL}?action=create_checkout&token=${TOKEN}`, { method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ amount: amt, source: src, success_url: window.location.origin, cancel_url: window.location.href })});
-  const data = await res.json(); if(data.data?.attributes?.checkout_url) window.location.href = data.data.attributes.checkout_url; else showToast('❌ '+ (data.error?.message||'Failed')); }
-
-async function runSim(){ const btn=document.querySelector('#simPanel button'); btn.textContent='⏳ Running...'; btn.disabled=true;
-  const res = await fetch(`${API_URL}?action=run_simulation&token=${TOKEN}`, { method:'POST', headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({ days: document.getElementById('simDays').value, volume: document.getElementById('simVol').value, risk: document.getElementById('simRisk').value })});
-  const data = await res.json(); btn.textContent='▶ Run'; btn.disabled=false;
-  if(data.success){ const m=data.metrics; document.getElementById('simOutput').innerHTML=`
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-top:8px;">
-    <div class="card" style="text-align:center;padding:8px;"><small>Total</small><div style="font-size:1.3rem;font-weight:700;">${m.total}</div></div>
-    <div class="card" style="text-align:center;padding:8px;"><small>AI Acc</small><div style="font-size:1.3rem;font-weight:700;color:#10b981;">${data.aiAccuracy}%</div></div>
-    <div class="card" style="text-align:center;padding:8px;"><small>Flags</small><div style="font-size:1.3rem;font-weight:700;color:${m.flags>0?'#ef4444':'#94a3b8'};">${m.flags}</div></div></div>`; }
+// 📊 Load Transactions
+async function loadTransactions() {
+  const result = await apiCall('list', { limit: 50 });
+  if (result.error) { showToast('❌ ' + result.error); return; }
+  
+  const tbody = document.querySelector('#txTable tbody');
+  if (!tbody) return;
+  
+  tbody.innerHTML = result.rows.map(r => `
+    <tr>
+      <td>${r.date || '-'}</td>
+      <td><span class="badge ${r.type==='IN'?'in':'out'}">${r.type || '-'}</span></td>
+      <td>₱${parseFloat(r.amount||0).toLocaleString()}</td>
+      <td>${r.category || '-'}</td>
+      <td>${r.status || '-'}</td>
+    </tr>
+  `).join('') || '<tr><td colspan="5" style="text-align:center;color:#94a3b8">No transactions yet</td></tr>';
 }
 
-async function exportData(type){ showToast('⏳ Generating...'); const res = await fetch(`${API_URL}?action=export_csv&token=${TOKEN}`); const data = await res.json();
-  const blob=new Blob([data.csv],{type:'text/csv'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=data.filename; a.click(); showToast('✅ Exported'); }
+// 📈 Load AI Insights
+async function loadAI() {
+  const el = document.getElementById('aiStats');
+  if (!el) return;
+  el.textContent = 'Analyzing...';
+  
+  const result = await apiCall('list', { limit: 30 });
+  if (result.error) { el.textContent = 'Error loading data'; return; }
+  
+  let inSum = 0, outSum = 0;
+  result.rows.forEach(r => {
+    const amt = parseFloat(r.amount) || 0;
+    if (r.type === 'IN') inSum += amt; else outSum += amt;
+  });
+  
+  const balance = inSum - outSum;
+  el.innerHTML = `
+    <p><strong>Current Balance:</strong> ₱${balance.toLocaleString(undefined, {minimumFractionDigits:2})}</p>
+    <p><small>Last 30: IN ₱${inSum.toLocaleString()} | OUT ₱${outSum.toLocaleString()}</small></p>
+    <p style="color:${balance>=0?'#10b981':'#ef4444'}"><strong>Trend:</strong> ${balance>=0?'📈 Positive':'📉 Negative'}</p>
+  `;
+}
 
-function showToast(m){ const t=document.getElementById('toast'); t.textContent=`CyraBill: ${m}`; t.style.display='block'; setTimeout(()=>t.style.display='none',3000); }
-function logout(){ localStorage.clear(); location.reload(); }
-if(TOKEN && ROLE){ document.getElementById('loginModal').classList.add('hidden'); document.getElementById('mainApp').classList.remove('hidden'); }
+// 💳 Initiate Checkout (PayMongo)
+async function initCheckout(amount, source) {
+  showToast('⏳ Preparing secure checkout...');
+  
+  const result = await apiCall('create_checkout', {
+    amount: parseFloat(amount),
+    source: source,
+    success_url: window.location.origin,
+    cancel_url: window.location.href
+  });
+  
+  if (result.data?.attributes?.checkout_url) {
+    showToast('✅ Redirecting to payment...');
+    window.location.href = result.data.attributes.checkout_url;
+  } else {
+    showToast('❌ ' + (result.error?.message || result.error || 'Checkout failed'));
+  }
+}
+
+// 🧪 Run AI Simulation
+async function runSim() {
+  const btn = document.querySelector('#simPanel button');
+  const output = document.getElementById('simOutput');
+  
+  btn.textContent = '⏳ Running...'; btn.disabled = true;
+  output.innerHTML = '<p>🔄 Generating synthetic data & running AI...</p>';
+  
+  const result = await apiCall('run_simulation', {
+    days: document.getElementById('simDays').value,
+    volume: document.getElementById('simVol').value,
+    risk: document.getElementById('simRisk').value
+  });
+  
+  btn.textContent = '▶ Run Simulation'; btn.disabled = false;
+  
+  if (result.success) {
+    const m = result.metrics;
+    const aiAcc = result.aiAccuracy || 0;
+    output.innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(100px,1fr));gap:8px;margin-top:8px">
+        <div class="card" style="text-align:center;padding:8px"><small>Total TX</small><div style="font-size:1.3rem;font-weight:700">${m.total||0}</div></div>
+        <div class="card" style="text-align:center;padding:8px"><small>AI Accuracy</small><div style="font-size:1.3rem;font-weight:700;color:${aiAcc>90?'#10b981':'#ef4444'}">${aiAcc}%</div></div>
+        <div class="card" style="text-align:center;padding:8px"><small>AML Flags</small><div style="font-size:1.3rem;font-weight:700;color:${(m.flags||0)>0?'#ef4444':'#94a3b8'}">${m.flags||0}</div></div>
+        <div class="card" style="text-align:center;padding:8px"><small>Net Drift</small><div style="font-size:1.1rem;font-weight:700">${(m.drift||0)>=0?'📈 +':'📉 '}₱${Math.round(m.drift||0).toLocaleString()}</div></div>
+      </div>
+    `;
+    showToast('✅ Simulation complete');
+  } else {
+    output.innerHTML = `<p style="color:#ef4444">❌ ${result.error || 'Simulation failed'}</p>`;
+  }
+}
+
+// 📤 Export Data
+async function exportData(type) {
+  showToast(`⏳ Generating ${type.toUpperCase()}...`);
+  
+  const result = await apiCall('export_csv');
+  if (result.error) { showToast('❌ ' + result.error); return; }
+  
+  // Create download
+  const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = result.filename || `cyra_export_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showToast('✅ Exported successfully');
+}
+
+// 🔔 Toast Notifications
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  if (!t) return;
+  t.textContent = `CyraBill: ${msg}`;
+  t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 3500);
+}
+
+// 🚪 Logout
+function logout() {
+  localStorage.clear();
+  location.reload();
+}
+
+// 🔄 Auto-load if already logged in
+if (TOKEN && ROLE) {
+  document.getElementById('loginModal')?.classList.add('hidden');
+  document.getElementById('mainApp')?.classList.remove('hidden');
+  loadTransactions();
+  loadAI();
+}
+
+// 📱 PWA Service Worker Registration (optional)
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
